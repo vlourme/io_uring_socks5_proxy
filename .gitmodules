@@ -1,0 +1,12 @@
+[submodule "third_party/condy"]
+	path = third_party/condy
+	url = https://github.com/wokron/condy.git
+[submodule "third_party/cpp-dotenv"]
+	path = third_party/cpp-dotenv
+	url = https://github.com/adeharo9/cpp-dotenv.git
+[submodule "third_party/dotenv_cpp"]
+	path = third_party/dotenv-cpp
+	url = https://github.com/laserpants/dotenv-cpp.git
+[submodule "third_party/spdlog"]
+	path = third_party/spdlog
+	url = https://github.com/gabime/spdlog.git
