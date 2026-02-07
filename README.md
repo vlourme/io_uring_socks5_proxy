@@ -10,7 +10,7 @@ cd third_party/condy/third_party/liburing
 git checkout liburing-2.13
 cd -
 cmake -S . -B build
-cmake --build build
+cmake --build build -j4 --config Release
 cp .env.example .env
 ./build/proxy
 ```
