@@ -6,10 +6,10 @@
 #include <vector>
 
 struct OutboundPrefix {
-    uint64_t net_high;       // Network part (high 64 bits)
-    uint64_t net_low;        // Network part (low 64 bits)
-    uint64_t host_mask_high; // Bits available for randomization (high)
-    uint64_t host_mask_low;  // Bits available for randomization (low)
+    uint64_t net_high;
+    uint64_t net_low;
+    uint64_t host_mask_high;
+    uint64_t host_mask_low;
 };
 
 std::vector<OutboundPrefix> parse_multi_cidr(const std::string &input) {
@@ -18,7 +18,6 @@ std::vector<OutboundPrefix> parse_multi_cidr(const std::string &input) {
     std::string item;
 
     while (std::getline(ss, item, ',')) {
-        // Remove potential whitespace
         item.erase(0, item.find_first_not_of(" "));
         item.erase(item.find_last_not_of(" ") + 1);
 
@@ -34,14 +33,12 @@ std::vector<OutboundPrefix> parse_multi_cidr(const std::string &input) {
             continue;
 
         OutboundPrefix p;
-        // Load bytes into 64-bit integers in Host Byte Order for easy math
         uint64_t high, low;
         std::memcpy(&high, &addr.s6_addr[0], 8);
         std::memcpy(&low, &addr.s6_addr[8], 8);
         high = __builtin_bswap64(high);
         low = __builtin_bswap64(low);
 
-        // Calculate masks based on prefix length
         if (len == 0) {
             p.host_mask_high = ~0ULL;
             p.host_mask_low = ~0ULL;
@@ -53,7 +50,6 @@ std::vector<OutboundPrefix> parse_multi_cidr(const std::string &input) {
             p.host_mask_low = (len == 128) ? 0 : (~0ULL >> (len - 64));
         }
 
-        // Clean the network part (zero out any bits in the host area)
         p.net_high = high & ~p.host_mask_high;
         p.net_low = low & ~p.host_mask_low;
 
@@ -66,7 +62,7 @@ static std::vector<OutboundPrefix> ipv6_prefixes;
 
 inline void generate_ip(sockaddr_in6 *out) {
     const auto &p = ipv6_prefixes[rand() % ipv6_prefixes.size()];
-    static thread_local uint64_t state = 0x12345678; // Fast PRNG seed
+    static thread_local uint64_t state = 0x12345678;
     auto fast_rand = []() {
         state ^= state << 13;
         state ^= state >> 7;
@@ -85,7 +81,6 @@ inline void generate_ip(sockaddr_in6 *out) {
     std::memcpy(&out->sin6_addr.s6_addr[8], &r_low, 8);
 }
 
-// Fast hash for IPv4 (it's just a 32-bit uint)
 struct IPv4Hash {
     size_t operator()(const in_addr &addr) const {
         return static_cast<size_t>(addr.s_addr);
@@ -98,7 +93,6 @@ struct IPv4Equal {
     }
 };
 
-// Reuse the IPv6 helpers from before...
 struct IPv6Hash {
     size_t operator()(const in6_addr &addr) const {
         const uint64_t *p = reinterpret_cast<const uint64_t *>(&addr);
@@ -147,19 +141,33 @@ void load_auth_from_string(const std::string &list) {
     }
 }
 
-char *get_ip_str(const struct sockaddr *sa, char *s, size_t maxlen) {
-    const char *result = nullptr;
+std::string get_ip_str(const sockaddr *sa) {
+    char buf[INET6_ADDRSTRLEN];
+
+    if (!sa)
+        return "Invalid/Unknown";
+
     if (sa->sa_family == AF_INET) {
-        result = inet_ntop(AF_INET, &(((struct sockaddr_in *)sa)->sin_addr), s,
-                           maxlen);
-    } else if (sa->sa_family == AF_INET6) {
-        result = inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)sa)->sin6_addr),
-                           s, maxlen);
+        if (inet_ntop(AF_INET, &(((sockaddr_in *)sa)->sin_addr), buf,
+                      sizeof(buf)))
+            return std::string(buf);
+        return "Invalid/Unknown";
     }
 
-    if (result == nullptr) {
-        strncpy(s, "Invalid/Unknown", maxlen);
-        return s; // Return the buffer, not NULL, to keep spdlog happy
+    if (sa->sa_family == AF_INET6) {
+        auto *sin6 = (sockaddr_in6 *)sa;
+
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            if (inet_ntop(AF_INET, ((uint8_t *)&sin6->sin6_addr) + 12, buf,
+                          sizeof(buf)))
+                return std::string(buf);
+            return "Invalid/Unknown";
+        }
+
+        if (inet_ntop(AF_INET6, &sin6->sin6_addr, buf, sizeof(buf)))
+            return std::string(buf);
+        return "Invalid/Unknown";
     }
-    return s;
+
+    return "Invalid/Unknown";
 }

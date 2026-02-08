@@ -109,7 +109,8 @@ condy::Coro<uint64_t> forward_one_way(int src, int dst, Pipe p) {
     co_return total_bytes;
 }
 
-condy::Coro<uint64_t> proxy(int client_fd, int server_fd) {
+condy::Coro<uint64_t> proxy(int client_fd, int server_fd, std::string src_ip,
+                            std::string dst_ip) {
     Pipe p1 = co_await local_pipe_pool.acquire();
     Pipe p2 = co_await local_pipe_pool.acquire();
 
@@ -124,19 +125,18 @@ condy::Coro<uint64_t> proxy(int client_fd, int server_fd) {
     co_await condy::link(condy::async_close(condy::fixed(client_fd)),
                          condy::async_close(condy::fixed(server_fd)));
 
-    spdlog::info("proxy total bytes: {} ({} -> {})", total, client_fd,
-                 server_fd);
+    spdlog::info("proxy total bytes: {} (src: {}, dst: {})", total, src_ip,
+                 dst_ip);
 
     co_return total;
 }
 
 condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
-    char ip_str[INET6_ADDRSTRLEN];
-    auto ip = get_ip_str((sockaddr *)&client_addr, ip_str, sizeof(ip_str));
+    std::string ip = get_ip_str((sockaddr *)&client_addr);
 
     if (!is_authorized(&client_addr)) {
         spdlog::warn("unauthorized access from {}", ip);
-        co_await condy::async_close(fd);
+        co_await condy::async_close(condy::fixed(fd));
         co_return;
     }
 
@@ -149,7 +149,7 @@ condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
     if (version[0] != SOCKS5_VERSION) {
         spdlog::error("[{}] invalid SOCKS5 version, expected: {}, got: {}", fd,
                       SOCKS5_VERSION, version[0]);
-        co_await condy::async_close(fd);
+        co_await condy::async_close(condy::fixed(fd));
         co_return;
     }
 
@@ -236,7 +236,7 @@ condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
         condy::async_send(condy::fixed(fd),
                           condy::buffer(SOCKS5_RESPONSE_DUMMY), 0));
 
-    condy::co_spawn(proxy(fd, outbound_fd)).detach();
+    condy::co_spawn(proxy(fd, outbound_fd, ip, address)).detach();
 
     co_return;
 }
@@ -307,15 +307,12 @@ condy::Coro<int> co_main(int core_id, int port) {
 }
 
 int main() {
-    dotenv::init();
+    auto &dotenv = dotenv::env.load_dotenv();
 
-    std::string ipv6_prefix = dotenv::getenv("IPV6_PREFIXES");
-    ipv6_prefixes = parse_multi_cidr(ipv6_prefix);
+    ipv6_prefixes = parse_multi_cidr(dotenv["IPV6_PREFIXES"]);
+    load_auth_from_string(dotenv["AUTH_LIST"]);
 
-    std::string auth_list = dotenv::getenv("AUTH_LIST");
-    load_auth_from_string(auth_list);
-
-    auto port_str = dotenv::getenv("PORT");
+    auto port_str = dotenv["PORT"];
     int port = 1080;
     if (port_str.empty()) {
         spdlog::info("No port specified, using default port 1080");

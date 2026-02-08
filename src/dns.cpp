@@ -13,10 +13,9 @@ struct CachedAddr {
 class DNSResolver {
     std::unordered_map<std::string, CachedAddr> cache;
     std::shared_mutex mtx;
-    const std::chrono::seconds ttl{300}; // 5-minute cache
+    const std::chrono::seconds ttl{300};
 
   public:
-    // Check if we have a valid cached address
     std::optional<sockaddr_in6> get_cached(const std::string &host) {
         std::shared_lock lock(mtx);
         auto it = cache.find(host);
