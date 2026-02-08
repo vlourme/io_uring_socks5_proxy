@@ -196,8 +196,8 @@ condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
         IPV6_FREEBIND, &opt, sizeof(opt));
     if (r < 0) {
         spdlog::error("[{}] failed to set socket option, error: {}", fd, r);
-        co_await condy::when_any(condy::async_close(condy::fixed(outbound_fd)),
-                                 condy::async_close(condy::fixed(fd)));
+        co_await condy::link(condy::async_close(condy::fixed(outbound_fd)),
+                             condy::async_close(condy::fixed(fd)));
         co_return;
     }
 
@@ -206,8 +206,8 @@ condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
                                        TCP_NODELAY, &opt, sizeof(opt));
     if (r < 0) {
         spdlog::error("[{}] failed to set socket option, error: {}", fd, r);
-        co_await condy::when_any(condy::async_close(condy::fixed(outbound_fd)),
-                                 condy::async_close(condy::fixed(fd)));
+        co_await condy::link(condy::async_close(condy::fixed(outbound_fd)),
+                             condy::async_close(condy::fixed(fd)));
         co_return;
     }
 
@@ -217,16 +217,16 @@ condy::Coro<void> session(int fd, sockaddr_storage client_addr) {
     if (r < 0) {
         spdlog::error("[{}] failed to bind socket, error: {}", fd,
                       strerror(errno));
-        co_await condy::when_any(condy::async_close(condy::fixed(outbound_fd)),
-                                 condy::async_close(condy::fixed(fd)));
+        co_await condy::link(condy::async_close(condy::fixed(outbound_fd)),
+                             condy::async_close(condy::fixed(fd)));
         co_return;
     }
 
     r = co_await condy::async_connect(condy::fixed(outbound_fd),
                                       (struct sockaddr *)&addr, sizeof(addr));
     if (r < 0) {
-        co_await condy::when_any(condy::async_close(condy::fixed(outbound_fd)),
-                                 condy::async_close(condy::fixed(fd)));
+        co_await condy::link(condy::async_close(condy::fixed(outbound_fd)),
+                             condy::async_close(condy::fixed(fd)));
         co_return;
     }
 
